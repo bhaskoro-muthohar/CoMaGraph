@@ -1,7 +1,5 @@
 # CoMaGraph (Context Manager Using Graph Storage) API
 
-A project for managing conversational context using OpenAI's NLP capabilities and Neo4j for graph storage.
-
 ## Overview
 
 CoMaGraph is a context management system that uses graph database (Neo4j) to store conversational data and OpenAI's embeddings to enable semantic search and context retrieval. The system maintains conversation threads, analyzes message patterns, and provides insights into conversation dynamics.
