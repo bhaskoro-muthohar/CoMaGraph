@@ -109,72 +109,13 @@ curl http://localhost:8000/api/v1/analysis/thread//stats
 
 ## Project Structure
 ```
-llm_context_manager/
-├── .env.example                    # Template for environment variables
-├── .gitignore
-├── README.md
-├── docker-compose.yml              # Neo4j + API service
-├── pyproject.toml                  # Project dependencies and config
-├── Dockerfile
-│
-├── src/
-│   ├── __init__.py
-│   ├── main.py                    # FastAPI application entry point
-│   │
-│   ├── api/
-│   │   ├── __init__.py
-│   │   ├── deps.py               # Dependency injection
-│   │   ├── error_handlers.py
-│   │   └── routes/
-│   │       ├── __init__.py
-│   │       ├── messages.py       # Message-related endpoints
-│   │       ├── threads.py        # Thread management endpoints
-│   │       └── analysis.py       # Analytics endpoints
-│   │
-│   ├── core/
-│   │   ├── __init__.py
-│   │   ├── config.py            # Configuration management
-│   │   ├── constants.py
-│   │   └── exceptions.py        # Custom exceptions
-│   │
-│   ├── db/
-│   │   ├── __init__.py
-│   │   ├── neo4j.py            # Neo4j connection management
-│   │   └── queries/            # Neo4j Cypher queries
-│   │       ├── __init__.py
-│   │       ├── messages.py
-│   │       ├── threads.py
-│   │       └── analysis.py
-│   │
-│   ├── models/
-│   │   ├── __init__.py
-│   │   ├── message.py          # Pydantic models for messages
-│   │   ├── thread.py          # Pydantic models for threads
-│   │   └── analysis.py        # Pydantic models for analysis results
-│   │
-│   ├── services/
-│   │   ├── __init__.py
-│   │   ├── message_service.py  # Message handling logic
-│   │   ├── thread_service.py   # Thread management logic
-│   │   ├── openai_service.py   # OpenAI API integration
-│   │   └── graph_service.py    # Neo4j operations
-│   │
-│   └── utils/
-│       ├── __init__.py
-│       ├── embeddings.py       # Embedding utilities
-│       ├── text_processing.py  # Text processing helpers
-│       └── validation.py       # Input validation helpers
-│
-├── tests/
-│   ├── __init__.py
-│   ├── conftest.py            # pytest fixtures
-│   ├── test_api/             # API endpoint tests
-│   ├── test_services/        # Service layer tests
-│   └── test_utils/          # Utility function tests
-│
-└── scripts/
-    ├── seed_data.py         # Data seeding script
-    └── setup_neo4j.py       # Neo4j setup script
+src/
+├── api/               # API routes and dependencies
+├── core/              # Core configurations and constants
+├── db/                # Database operations
+├── models/            # Pydantic models
+├── services/          # Business logic
+└── main.py           # Application entry point
 
 ```
 
