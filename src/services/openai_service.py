@@ -10,12 +10,11 @@ class OpenAIService:
 
     async def generate_embedding(self, text: str) -> List[float]:
         """Generate embedding vector for given text"""
-        response = await self.client.embeddings.create(
+        response = self.client.embeddings.create(
             model=self.settings.EMBEDDING_MODEL,
             input=text
         )
         return response.data[0].embedding
-
     async def calculate_similarity(self, embedding1: List[float], embedding2: List[float]) -> float:
         """Calculate cosine similarity between two embeddings"""
         vec1 = np.array(embedding1)

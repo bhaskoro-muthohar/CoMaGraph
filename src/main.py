@@ -6,12 +6,23 @@ from .api.error_handlers import context_manager_exception_handler
 from .core.exceptions import ContextManagerException
 from .core.config import get_settings
 from .db.neo4j import Neo4jService
+from contextlib import asynccontextmanager
 
 settings = get_settings()
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    neo4j_service = Neo4jService()
+    neo4j_service.init_constraints()
+    yield
+    # Shutdown
+    neo4j_service.close()
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json"
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -39,21 +50,7 @@ app.include_router(
     prefix=settings.API_V1_STR
 )
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup"""
-    # Initialize Neo4j constraints
-    neo4j_service = Neo4jService()
-    neo4j_service.init_constraints()
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown"""
-    # Close Neo4j connection
-    neo4j_service = Neo4jService()
-    neo4j_service.close()
-
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint"""    
     return {"status": "healthy"}

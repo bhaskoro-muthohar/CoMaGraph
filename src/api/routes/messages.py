@@ -1,16 +1,17 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
-from typing import List, Optional
+from typing import List
 from uuid import UUID
 from ...models.message import Message, MessageCreate
 from ...services.message_service import MessageService
 from ...core.exceptions import ContextManagerException
+from ..deps import get_message_service
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
-@router.post("/", response_model=Message)
+@router.post("/", response_model=Message, operation_id="create_new_message")
 async def create_message(
     message: MessageCreate,
-    message_service: MessageService = Depends()
+    message_service: MessageService = Depends(get_message_service)
 ) -> Message:
     """Create a new message in a thread"""
     try:
@@ -18,12 +19,12 @@ async def create_message(
     except ContextManagerException as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Failed to create message")
+        raise HTTPException(status_code=500, detail=f"Failed to create message: {str(e)}")
 
-@router.get("/{message_id}", response_model=Message)
+@router.get("/{message_id}", response_model=Message, operation_id="get_message_by_id")
 async def get_message(
     message_id: UUID,
-    message_service: MessageService = Depends()
+    message_service: MessageService = Depends(get_message_service)
 ) -> Message:
     """Get a specific message by ID"""
     try:
@@ -34,11 +35,11 @@ async def get_message(
     except ContextManagerException as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/similar/", response_model=List[Message])
+@router.get("/similar/", response_model=List[Message], operation_id="find_similar_messages_content")
 async def find_similar_messages(
     content: str = Query(..., description="Content to find similar messages for"),
     limit: int = Query(default=5, le=20),
-    message_service: MessageService = Depends()
+    message_service: MessageService = Depends(get_message_service)
 ) -> List[Message]:
     """Find messages similar to the provided content"""
     try:

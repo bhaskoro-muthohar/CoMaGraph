@@ -19,7 +19,7 @@ class ThreadService:
     async def create_thread(self, thread_create: ThreadCreate) -> Thread:
         """Create a new conversation thread"""
         thread = Thread(
-            metadata=thread_create.metadata
+            metadata=thread_create.metadata if thread_create.metadata else {}
         )
 
         with self.neo4j.get_session() as session:
@@ -29,14 +29,12 @@ class ThreadService:
                         id: $id,
                         status: $status,
                         created_at: datetime(),
-                        updated_at: datetime(),
-                        metadata: $metadata
+                        updated_at: datetime()
                     })
                     RETURN t
                 """,
                 id=str(thread.id),
-                status=thread.status,
-                metadata=thread.metadata
+                status=thread.status
                 )
             )
 

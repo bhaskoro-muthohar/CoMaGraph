@@ -4,6 +4,11 @@ from ..models.message import Message, MessageCreate
 from ..db.neo4j import Neo4jService
 from ..services.openai_service import OpenAIService
 from ..core.config import get_settings
+from ..core.exceptions import ContextManagerException, DatabaseConnectionError
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 class MessageService:
     def __init__(self):
@@ -13,66 +18,65 @@ class MessageService:
 
     async def create_message(self, message_create: MessageCreate) -> Message:
         """Create a new message with embedding and store in Neo4j"""
-        # Generate embedding
-        embedding = await self.openai.generate_embedding(message_create.content)
+        try:
+            logger.debug(f"Starting message creation with content: {message_create.content}")
         
-        # Create message instance
-        message = Message(
-            content=message_create.content,
-            role=message_create.role,
-            thread_id=message_create.thread_id,
-            embedding=embedding,
-            metadata=message_create.metadata
-        )
-        
-        # Store in Neo4j
-        with self.neo4j.get_session() as session:
-            session.execute_write(
-                lambda tx: tx.run(
-                    MessageQueries.CREATE_MESSAGE,
-                    id=str(message.id),
-                    content=message.content,
-                    role=message.role,
-                    thread_id=str(message.thread_id),
-                    embedding=message.embedding,
-                    metadata=message.metadata
+            # First, verify thread exists
+            with self.neo4j.get_session() as session:
+                logger.debug(f"Verifying thread existence for ID: {message_create.thread_id}")
+                thread_exists = session.execute_read(
+                    lambda tx: tx.run(
+                        "MATCH (t:Thread {id: $thread_id}) RETURN count(t) as count",
+                        thread_id=str(message_create.thread_id)
+                    ).single()["count"]
                 )
-            )
-        
-        return message
-
-    async def get_similar_messages(
-        self, 
-        content: str, 
-        limit: int = 5
-    ) -> List[Message]:
-        """Find similar messages based on content"""
-        # Generate embedding for query content
-        query_embedding = await self.openai.generate_embedding(content)
-        
-        # Query Neo4j for similar messages using vector similarity
-        with self.neo4j.get_session() as session:
-            result = session.execute_read(
-                lambda tx: tx.run("""
-                    MATCH (m:Message)
-                    WITH m, gds.similarity.cosine(m.embedding, $embedding) AS score
-                    WHERE score >= $threshold
-                    RETURN m
-                    ORDER BY score DESC
-                    LIMIT $limit
-                """,
-                embedding=query_embedding,
-                threshold=self.settings.SIMILARITY_THRESHOLD,
-                limit=limit
-                )
-            )
             
-            messages = [
-                Message.model_validate(record["m"])
-                for record in result
-            ]
+                if not thread_exists:
+                    raise ContextManagerException(f"Thread {message_create.thread_id} not found")
+
+            # Generate embedding
+            embedding = await self.openai.generate_embedding(message_create.content)
         
-        return messages
+            # Create message instance
+            message = Message(
+                content=message_create.content,
+                role=message_create.role,
+                thread_id=message_create.thread_id,
+                embedding=embedding,
+                metadata=message_create.metadata
+            )
+        
+            # Store in Neo4j - metadata stored as individual properties
+            with self.neo4j.get_session() as session:
+                result = session.execute_write(
+                    lambda tx: tx.run(
+                        """
+                        MATCH (t:Thread {id: $thread_id})
+                        CREATE (m:Message {
+                            id: $id,
+                            content: $content,
+                            role: $role,
+                            created_at: datetime(),
+                            embedding: $embedding
+                        })-[:BELONGS_TO]->(t)
+                        RETURN m
+                        """,
+                        id=str(message.id),
+                        content=message.content,
+                        role=message.role,
+                        thread_id=str(message.thread_id),
+                        embedding=message.embedding
+                    ).single()
+                )
+            
+                if not result:
+                    raise DatabaseConnectionError("Failed to create message in database")
+            
+                return message
+                
+        except Exception as e:
+            logger.error(f"Error creating message: {str(e)}", exc_info=True)
+            raise ContextManagerException(f"Failed to create message: {str(e)}")
 
     async def get_thread_context(
         self, 
@@ -86,37 +90,44 @@ class MessageService:
             
         with self.neo4j.get_session() as session:
             if message_id:
-                # Get context around specific message
-                result = session.execute_read(
-                    lambda tx: tx.run("""
+                with session.begin_transaction() as tx:
+                    result = tx.run("""
                         MATCH (m:Message {id: $message_id})-[:BELONGS_TO]->(t:Thread {id: $thread_id})
                         MATCH (context:Message)-[:BELONGS_TO]->(t)
                         WHERE abs(duration.between(context.created_at, m.created_at).seconds) <= $window_seconds
-                        RETURN context
+                        RETURN {
+                            id: toString(context.id),
+                            content: context.content,
+                            role: context.role,
+                            created_at: toString(context.created_at),
+                            thread_id: toString(t.id),
+                            metadata: coalesce(context.metadata, {})
+                        } as context
                         ORDER BY context.created_at
                     """,
                     message_id=str(message_id),
                     thread_id=str(thread_id),
-                    window_seconds=window_size * 60  # Convert minutes to seconds
+                    window_seconds=window_size * 60
                     )
-                )
+                    messages = [Message.model_validate(record["context"]) for record in result]
             else:
-                # Get most recent context
-                result = session.execute_read(
-                    lambda tx: tx.run("""
+                with session.begin_transaction() as tx:
+                    result = tx.run("""
                         MATCH (m:Message)-[:BELONGS_TO]->(t:Thread {id: $thread_id})
-                        RETURN m
+                        RETURN {
+                            id: toString(m.id),
+                            content: m.content,
+                            role: m.role,
+                            created_at: toString(m.created_at),
+                            thread_id: toString(t.id),
+                            metadata: coalesce(m.metadata, {})
+                        } as m
                         ORDER BY m.created_at DESC
                         LIMIT $limit
                     """,
                     thread_id=str(thread_id),
                     limit=window_size
                     )
-                )
-            
-            messages = [
-                Message.model_validate(record["m" if message_id else "context"])
-                for record in result
-            ]
+                    messages = [Message.model_validate(record["m"]) for record in result]
         
         return messages
