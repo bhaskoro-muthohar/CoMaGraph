@@ -45,7 +45,7 @@ CoMaGraph is a context management system that uses graph database (Neo4j) to sto
 
 1. **Clone the repository:**
 ```bash
-git clone https://github.com/yourusername/comagraph.git
+git clone https://github.com/bhaskoro-muthohar/comagraph.git
 cd comagraph
 ```
 
