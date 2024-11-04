@@ -1,5 +1,7 @@
 from typing import List, Optional
 from uuid import UUID
+from datetime import datetime
+import neo4j.time
 from ..models.message import Message, MessageCreate
 from ..db.neo4j import Neo4jService
 from ..services.openai_service import OpenAIService
@@ -131,3 +133,55 @@ class MessageService:
                     messages = [Message.model_validate(record["m"]) for record in result]
         
         return messages
+
+    async def get_similar_messages(self, content: str, limit: int = 5) -> List[Message]:
+        """Find messages similar to the provided content using embeddings"""
+        try:
+            # Generate embedding for the query content
+            query_embedding = await self.openai.generate_embedding(content)
+            
+            with self.neo4j.get_session() as session:
+                # Use vector similarity search in Neo4j
+                result = session.execute_read(
+                    lambda tx: tx.run("""
+                        MATCH (m:Message)-[:BELONGS_TO]->(t:Thread)
+                        WITH m, t, gds.similarity.cosine(m.embedding, $embedding) AS similarity
+                        WHERE similarity >= $threshold
+                        RETURN m, t.id as thread_id
+                        ORDER BY similarity DESC
+                        LIMIT $limit
+                    """,
+                    embedding=query_embedding,
+                    threshold=self.settings.SIMILARITY_THRESHOLD,
+                    limit=limit
+                    ).data()
+                )
+                
+                if not result:
+                    return []
+                    
+                try:
+                    messages = []
+                    for record in result:
+                        message_data = record["m"]
+                        # Convert Neo4j datetime to Python datetime
+                        if isinstance(message_data.get("created_at"), neo4j.time.DateTime):
+                            message_data["created_at"] = datetime.fromtimestamp(
+                                message_data["created_at"].to_native().timestamp()
+                            )
+                        # Add thread_id from the relationship
+                        message_data["thread_id"] = UUID(record["thread_id"])
+                        
+                        messages.append(Message.model_validate(message_data))
+                    return messages
+                    
+                except Exception as validation_error:
+                    logger.error(f"Error validating messages: {validation_error}")
+                    logger.debug(f"Raw result: {result}")
+                    raise ContextManagerException(f"Error validating message data: {str(validation_error)}")
+                
+        except Exception as e:
+            logger.error(f"Error in get_similar_messages: {str(e)}")
+            if isinstance(e, ContextManagerException):
+                raise
+            raise ContextManagerException(f"Error finding similar messages: {str(e)}")
